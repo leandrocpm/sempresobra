@@ -95,6 +95,73 @@
     </div>
   </div>
 
+  <!-- ==================== MODAL DE GERENCIAMENTO DE CAMPEONATOS ==================== -->
+  <div id="tournaments-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-5 shadow-2xl border border-slate-200 space-y-4 max-h-[88vh] flex flex-col">
+      <div class="flex items-center justify-between gap-2 shrink-0">
+        <div class="flex items-center gap-2.5">
+          <div class="w-10 h-10 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 text-lg">
+            🏆
+          </div>
+          <div>
+            <h3 class="font-extrabold text-base text-slate-900">Meus Campeonatos</h3>
+            <p class="text-[11px] font-medium text-slate-500">Salve etapas, alterne entre torneios ou exclua</p>
+          </div>
+        </div>
+        <button type="button" onclick="closeTournamentsModal()" class="w-8 h-8 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold">
+          ✕
+        </button>
+      </div>
+
+      <!-- Formulário para Salvar Campeonato Atual -->
+      <div class="bg-slate-50 rounded-2xl p-3.5 border border-slate-200/90 space-y-2.5 shrink-0">
+        <label for="input-tournament-name" class="block text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
+          Nome do Campeonato Atual
+        </label>
+        <input
+          type="text"
+          id="input-tournament-name"
+          placeholder="Ex: Etapa Novembro 2026..."
+          maxlength="40"
+          class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400"
+        />
+        <div class="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onclick="saveCurrentTournament(false)"
+            class="w-full py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-extrabold active:scale-95 transition flex items-center justify-center gap-1"
+          >
+            <span>💾</span>
+            <span>Salvar / Atualizar</span>
+          </button>
+          <button
+            type="button"
+            onclick="saveCurrentTournament(true)"
+            class="w-full py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold active:scale-95 transition flex items-center justify-center gap-1"
+          >
+            <span>➕</span>
+            <span>Salvar como Novo</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Lista de Campeonatos Salvos -->
+      <div class="flex-1 overflow-y-auto space-y-2 pr-0.5" id="saved-tournaments-list"></div>
+
+      <!-- Rodapé: Criar Torneio Novo Zerado -->
+      <div class="pt-2 border-t border-slate-100 shrink-0">
+        <button
+          type="button"
+          onclick="confirmCreateNewTournament()"
+          class="w-full py-2.5 px-4 rounded-2xl bg-sky-50 hover:bg-sky-100 text-sky-900 border border-sky-200 text-xs font-extrabold active:scale-95 transition flex items-center justify-center gap-1.5"
+        >
+          <span>✨</span>
+          <span>Iniciar Novo Campeonato do Zero</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- ==================== CABEÇALHO LIMPO E BEM PROPORCIONADO ==================== -->
   <header class="pt-3 px-3.5 max-w-3xl w-full mx-auto">
     <div class="bg-white rounded-3xl p-4 shadow-sm border border-slate-200/90 space-y-3.5">
@@ -134,26 +201,36 @@
           <h1 class="text-lg sm:text-xl font-black text-slate-950 tracking-tight leading-tight mt-1 truncate">
             Rei & Rainha da Praia
           </h1>
-          <p class="text-xs font-semibold text-slate-500 truncate mt-0.5">
+          <p id="header-tournament-subtitle" class="text-xs font-semibold text-slate-500 truncate mt-0.5">
             Família Sempre Sobra JCC • Est. 13/09/2019
           </p>
         </div>
       </div>
 
-      <div class="grid grid-cols-3 gap-2 pt-0.5">
+      <!-- Barra de Ações Rápidas (4 Botões Compactos e Proporcionais) -->
+      <div class="grid grid-cols-4 gap-1.5 pt-0.5">
+        <button
+          type="button"
+          onclick="openTournamentsModal()"
+          class="w-full py-2.5 px-1.5 rounded-2xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-[11px] sm:text-xs font-extrabold shadow-xs flex items-center justify-center gap-1 active:scale-95 transition"
+        >
+          <span>📂</span>
+          <span>Torneios</span>
+        </button>
+
         <button
           type="button"
           onclick="downloadHtmlFile()"
-          class="w-full py-2.5 px-2 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-[11px] sm:text-xs font-extrabold shadow-xs flex items-center justify-center gap-1 active:scale-95 transition"
+          class="w-full py-2.5 px-1.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-[11px] sm:text-xs font-extrabold shadow-xs flex items-center justify-center gap-1 active:scale-95 transition"
         >
           <span>⬇️</span>
-          <span>Baixar App</span>
+          <span>Baixar</span>
         </button>
 
         <button
           type="button"
           onclick="openShareModal()"
-          class="w-full py-2.5 px-2 rounded-2xl bg-purple-600 hover:bg-purple-700 text-white text-[11px] sm:text-xs font-extrabold shadow-xs flex items-center justify-center gap-1 active:scale-95 transition"
+          class="w-full py-2.5 px-1.5 rounded-2xl bg-purple-600 hover:bg-purple-700 text-white text-[11px] sm:text-xs font-extrabold shadow-xs flex items-center justify-center gap-1 active:scale-95 transition"
         >
           <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2.3" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
@@ -164,7 +241,7 @@
         <button
           type="button"
           onclick="copyRankingText()"
-          class="w-full py-2.5 px-2 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] sm:text-xs font-extrabold shadow-xs flex items-center justify-center gap-1 active:scale-95 transition"
+          class="w-full py-2.5 px-1.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] sm:text-xs font-extrabold shadow-xs flex items-center justify-center gap-1 active:scale-95 transition"
         >
           <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2.3" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -431,7 +508,7 @@
 
   </main>
 
-  <!-- ==================== SCRIPT PRINCIPAL (COMPATÍVEL COM TODOS OS NAVEGADORES E ARQUIVOS LOCAIS) ==================== -->
+  <!-- ==================== SCRIPT PRINCIPAL ==================== -->
   <script>
     const OFFICIAL_LOGO_SVG = `
       <svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg" class="w-full h-full select-none">
@@ -535,8 +612,11 @@
     `;
 
     const STORAGE_KEY = 'jcc_rei_rainha_praia_v4';
+    const SAVED_TOURNAMENTS_KEY = 'jcc_saved_tournaments_v1';
 
     const DEFAULT_STATE = {
+      tournamentId: null,
+      tournamentName: 'Torneio Atual • Sempre Sobra JCC',
       kings: ['Leandro', 'Fabinho', 'Titi', 'Matheus', 'Wellington', 'Ricardo', 'Paulo'],
       queens: ['Paula', 'Ellen', 'Zaza', 'Cris', 'Simone', 'Bia'],
       gamesMode: 'all',
@@ -810,6 +890,7 @@
 
     function encodeStateToBase64(obj) {
       const compact = {
+        n: obj.tournamentName || 'Torneio JCC',
         k: obj.kings,
         q: obj.queens,
         m: obj.gamesMode,
@@ -825,6 +906,8 @@
       const parsed = JSON.parse(decodeURIComponent(escape(atob(str))));
       if (!parsed || !Array.isArray(parsed.k) || !Array.isArray(parsed.q)) return false;
 
+      state.tournamentId = null;
+      state.tournamentName = parsed.n || 'Torneio Compartilhado • JCC';
       state.kings = parsed.k;
       state.queens = parsed.q;
       state.gamesMode = parsed.m || 'all';
@@ -873,6 +956,22 @@
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       } catch (e) {}
+      // Se o torneio ativo já está vinculado a um campeonato salvo, atualiza-o automaticamente
+      if (state.tournamentId) {
+        try {
+          const list = getSavedTournamentsList();
+          const idx = list.findIndex((item) => item.id === state.tournamentId);
+          if (idx !== -1) {
+            list[idx] = {
+              id: state.tournamentId,
+              name: state.tournamentName || list[idx].name,
+              updatedAt: Date.now(),
+              data: JSON.parse(JSON.stringify(state))
+            };
+            localStorage.setItem(SAVED_TOURNAMENTS_KEY, JSON.stringify(list));
+          }
+        } catch (e) {}
+      }
       try {
         const encoded = encodeStateToBase64(state);
         window.history.replaceState(null, '', '#s=' + encoded);
@@ -884,6 +983,224 @@
       renderAll();
     }
 
+    // =========================================================================
+    // GERENCIAMENTO DE MÚLTIPLOS CAMPEONATOS (SALVAR, CARREGAR, DELETAR)
+    // =========================================================================
+    function getSavedTournamentsList() {
+      try {
+        const raw = localStorage.getItem(SAVED_TOURNAMENTS_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function setSavedTournamentsList(list) {
+      try {
+        localStorage.setItem(SAVED_TOURNAMENTS_KEY, JSON.stringify(list));
+      } catch (e) {
+        showToast('Erro ao gravar no armazenamento do navegador.', 'rose');
+      }
+    }
+
+    function openTournamentsModal() {
+      const input = document.getElementById('input-tournament-name');
+      if (input) {
+        input.value = state.tournamentName || `Torneio ${state.dates.join('/')}`;
+      }
+      renderSavedTournamentsList();
+      const modal = document.getElementById('tournaments-modal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeTournamentsModal() {
+      const modal = document.getElementById('tournaments-modal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function saveCurrentTournament(asNew) {
+      const input = document.getElementById('input-tournament-name');
+      const typedName = (input && input.value.trim()) || `Torneio ${state.dates.join('/')}`;
+      const list = getSavedTournamentsList();
+
+      if (!asNew && state.tournamentId) {
+        const existingIdx = list.findIndex((item) => item.id === state.tournamentId);
+        if (existingIdx !== -1) {
+          state.tournamentName = typedName;
+          list[existingIdx] = {
+            id: state.tournamentId,
+            name: typedName,
+            updatedAt: Date.now(),
+            data: JSON.parse(JSON.stringify(state))
+          };
+          setSavedTournamentsList(list);
+          saveAndRender();
+          renderSavedTournamentsList();
+          showToast(`"${typedName}" atualizado!`, 'emerald');
+          return;
+        }
+      }
+
+      const newId = 't_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+      state.tournamentId = newId;
+      state.tournamentName = typedName;
+
+      list.unshift({
+        id: newId,
+        name: typedName,
+        updatedAt: Date.now(),
+        data: JSON.parse(JSON.stringify(state))
+      });
+
+      setSavedTournamentsList(list);
+      saveAndRender();
+      renderSavedTournamentsList();
+      showToast(`Campeonato "${typedName}" salvo!`, 'emerald');
+    }
+
+    function loadSavedTournament(id) {
+      const list = getSavedTournamentsList();
+      const found = list.find((item) => item.id === id);
+      if (!found || !found.data) {
+        showToast('Campeonato não encontrado.', 'rose');
+        return;
+      }
+
+      state = Object.assign(JSON.parse(JSON.stringify(DEFAULT_STATE)), JSON.parse(JSON.stringify(found.data)));
+      state.tournamentId = found.id;
+      state.tournamentName = found.name;
+
+      if (!Array.isArray(state.qualifyingMatches) || state.qualifyingMatches.length === 0) {
+        generateAllValidMatches(false);
+      }
+
+      saveAndRender();
+      closeTournamentsModal();
+      showToast(`"${found.name}" carregado para edição!`, 'emerald');
+    }
+
+    function confirmDeleteSavedTournament(id) {
+      const list = getSavedTournamentsList();
+      const found = list.find((item) => item.id === id);
+      if (!found) return;
+
+      openConfirmModal(
+        'Excluir Campeonato',
+        `Tem certeza que deseja excluir permanentemente "${found.name}"?`,
+        () => {
+          const updated = getSavedTournamentsList().filter((item) => item.id !== id);
+          setSavedTournamentsList(updated);
+          if (state.tournamentId === id) {
+            state.tournamentId = null;
+            saveAndRender();
+          }
+          renderSavedTournamentsList();
+          showToast('Campeonato excluído.', 'slate');
+        }
+      );
+    }
+
+    function confirmCreateNewTournament() {
+      openConfirmModal(
+        'Novo Campeonato do Zero',
+        'Deseja iniciar um novo torneio limpo? Salve o atual antes se quiser guardar os placares.',
+        () => {
+          const keptKings = [...state.kings];
+          const keptQueens = [...state.queens];
+          const keptLogo = state.customLogo;
+
+          state = JSON.parse(JSON.stringify(DEFAULT_STATE));
+          state.kings = keptKings;
+          state.queens = keptQueens;
+          state.customLogo = keptLogo;
+          state.seed = Math.floor(Math.random() * 90000000) + 10000000;
+          state.tournamentId = null;
+          state.tournamentName = 'Novo Torneio • Sempre Sobra JCC';
+
+          generateAllValidMatches(false);
+          saveAndRender();
+          closeTournamentsModal();
+          showToast('Novo campeonato iniciado!', 'emerald');
+        }
+      );
+    }
+
+    function renderSavedTournamentsList() {
+      const container = document.getElementById('saved-tournaments-list');
+      if (!container) return;
+
+      const list = getSavedTournamentsList();
+      if (list.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-6 px-4 rounded-2xl bg-slate-50 border border-dashed border-slate-200">
+            <p class="text-xs font-extrabold text-slate-600">Nenhum campeonato salvo ainda</p>
+            <p class="text-[11px] text-slate-400 mt-1">Digite um nome acima e toque em "Salvar / Atualizar" para guardar esta edição.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = list
+        .map((item) => {
+          const isCurrent = state.tournamentId === item.id;
+          const d = item.data || {};
+          const matches = Array.isArray(d.qualifyingMatches) ? d.qualifyingMatches : [];
+          const scoredCount = matches.filter(
+            (m) => m.scoreA !== '' && m.scoreB !== '' && (Number(m.scoreA) > 0 || Number(m.scoreB) > 0)
+          ).length;
+          const dateStr = item.updatedAt
+            ? new Date(item.updatedAt).toLocaleDateString('pt-BR', {
+                day: '2-digit',
+                month: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+              })
+            : '';
+
+          return `
+            <div class="p-3 rounded-2xl border ${isCurrent ? 'bg-amber-50/70 border-amber-300' : 'bg-white border-slate-200'} flex items-center justify-between gap-2">
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs font-black text-slate-900 truncate">${escapeHtml(item.name)}</span>
+                  ${
+                    isCurrent
+                      ? '<span class="px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 text-[9px] font-black shrink-0">ATIVO</span>'
+                      : ''
+                  }
+                </div>
+                <p class="text-[10px] font-semibold text-slate-500 mt-0.5">
+                  ${scoredCount}/${matches.length} jogos • Dias ${(d.dates || ['27', '28', '29']).join('/')} ${dateStr ? '• ' + dateStr : ''}
+                </p>
+              </div>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onclick="loadSavedTournament('${item.id}')"
+                  class="px-2.5 py-1.5 rounded-xl ${isCurrent ? 'bg-amber-500 text-slate-950' : 'bg-slate-900 text-white'} text-[11px] font-extrabold active:scale-95 transition"
+                >
+                  ${isCurrent ? 'Aberto' : 'Abrir'}
+                </button>
+                <button
+                  type="button"
+                  onclick="confirmDeleteSavedTournament('${item.id}')"
+                  title="Excluir campeonato"
+                  class="w-8 h-8 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-xs font-extrabold flex items-center justify-center active:scale-95 transition"
+                >
+                  🗑️
+                </button>
+              </div>
+            </div>
+          `;
+        })
+        .join('');
+    }
+
+    // =========================================================================
+    // RENDERIZAÇÃO DE INTERFACE
+    // =========================================================================
     function renderLogos() {
       const slot = document.getElementById('header-logo-slot');
       if (slot) {
@@ -901,6 +1218,13 @@
           restoreBtn.classList.add('hidden');
           restoreBtn.classList.remove('flex');
         }
+      }
+
+      const subEl = document.getElementById('header-tournament-subtitle');
+      if (subEl) {
+        subEl.textContent = state.tournamentName
+          ? `${state.tournamentName} • JCC`
+          : 'Família Sempre Sobra JCC • Est. 13/09/2019';
       }
     }
 
@@ -1474,13 +1798,13 @@
 
       if (isTemporaryPreviewHost()) {
         titleEl.textContent = 'Publicar App para Compartilhar';
-        subtitleEl.textContent = 'Suba o index.html no Tiiny.host ou Netlify Drop';
+        subtitleEl.textContent = 'Suba o index.html no GitHub Pages ou Netlify Drop';
         bodyEl.innerHTML = `
           <div class="rounded-2xl bg-amber-50 border border-amber-200 p-3.5 text-xs text-amber-950 space-y-2 leading-relaxed">
             <p class="font-extrabold">📲 Como gerar seu link oficial do WhatsApp:</p>
             <ol class="list-decimal list-inside space-y-1 font-semibold text-amber-900">
-              <li>Toque em <strong>⬇️ Baixar App</strong> no topo da tela para salvar o <code class="bg-amber-100 px-1.5 py-0.5 rounded font-bold">index.html</code>.</li>
-              <li>Envie o arquivo gratuitamente em <strong>tiiny.host</strong> ou <strong>app.netlify.com/drop</strong>.</li>
+              <li>Toque em <strong>⬇️ Baixar</strong> no topo da tela para salvar o <code class="bg-amber-100 px-1.5 py-0.5 rounded font-bold">index.html</code>.</li>
+              <li>Envie o arquivo gratuitamente no <strong>GitHub Pages</strong> ou <strong>Netlify Drop</strong>.</li>
               <li>Abra o link gerado e toque em <strong>Link</strong> para compartilhar os placares com a turma!</li>
             </ol>
           </div>
@@ -1578,7 +1902,7 @@
     function sendPublicUrlWhatsApp() {
       const inp = document.getElementById('public-share-input');
       const val = (inp && inp.value) || publicShareUrl;
-      const msg = `🎾 *Rei & Rainha da Praia • Família Sempre Sobra JCC*\n📅 Dias: ${state.dates.join(', ')}\n\n📲 Acompanhe os jogos e a classificação:\n${val}`;
+      const msg = `🎾 *Rei & Rainha da Praia • Família Sempre Sobra JCC*\n🏆 ${state.tournamentName || 'Torneio JCC'}\n📅 Dias: ${state.dates.join(', ')}\n\n📲 Acompanhe os jogos e a classificação:\n${val}`;
       window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank', 'noopener,noreferrer');
     }
 
@@ -1586,6 +1910,7 @@
       const { kings, queens } = computeRankings();
       const lines = [
         `🎾 *REI & RAINHA DA PRAIA • FAMÍLIA SEMPRE SOBRA JCC*`,
+        `🏆 ${state.tournamentName || 'Torneio JCC'}`,
         `📅 Dias: ${state.dates.join(', ')}`,
         ``,
         `👑 *RANKING REI DA PRAIA (GP | SG | Méd):*`

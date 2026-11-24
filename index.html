@@ -8,6 +8,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Oswald:wght@600;700&display=swap" rel="stylesheet" />
+  
+  <!-- Firebase SDK (Compat) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
   <style>
     * {
       box-sizing: border-box;
@@ -105,7 +110,7 @@
           </div>
           <div>
             <h3 class="font-extrabold text-base text-slate-900">Meus Campeonatos</h3>
-            <p class="text-[11px] font-medium text-slate-500">Salve etapas, alterne entre torneios ou exclua</p>
+            <p id="tournaments-modal-subtitle" class="text-[11px] font-medium text-slate-500">Nuvem + Backup Local sincronizados</p>
           </div>
         </div>
         <button type="button" onclick="closeTournamentsModal()" class="w-8 h-8 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold">
@@ -194,7 +199,7 @@
             </span>
             <span id="live-sync-badge" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-200">
               <span id="live-sync-dot" class="w-2 h-2 rounded-full bg-emerald-500"></span>
-              <span id="live-sync-text">Pronto</span>
+              <span id="live-sync-text">Offline (Local)</span>
             </span>
           </div>
 
@@ -510,6 +515,79 @@
 
   <!-- ==================== SCRIPT PRINCIPAL ==================== -->
   <script>
+    // =========================================================================
+    // CONFIGURAÇÃO DO FIREBASE CLOUD FIRESTORE
+    // Substitua os campos abaixo pelas credenciais do seu projeto Firebase
+    // =========================================================================
+    const FIREBASE_CONFIG = {
+      apiKey: "COLE_SUA_API_KEY_AQUI",
+      authDomain: "SEU_PROJETO.firebaseapp.com",
+      projectId: "SEU_PROJECT_ID_AQUI",
+      storageBucket: "SEU_PROJETO.appspot.com",
+      messagingSenderId: "SEU_SENDER_ID",
+      appId: "SEU_APP_ID"
+    };
+
+    const FIRESTORE_COLLECTION = 'torneios_jcc';
+    let db = null;
+    let firebaseReady = false;
+    let unsubscribeSnapshot = null;
+    let isApplyingRemoteSnapshot = false;
+    let cloudSaveTimeout = null;
+
+    function initFirebase() {
+      try {
+        if (
+          typeof firebase !== 'undefined' &&
+          FIREBASE_CONFIG.apiKey &&
+          !FIREBASE_CONFIG.apiKey.includes('COLE_SUA')
+        ) {
+          if (!firebase.apps.length) {
+            firebase.initializeApp(FIREBASE_CONFIG);
+          }
+          db = firebase.firestore();
+          // Habilita persistência offline nativa do SDK do Firestore
+          db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+          firebaseReady = true;
+          updateSyncBadge('online');
+        } else {
+          firebaseReady = false;
+          updateSyncBadge('local');
+        }
+      } catch (e) {
+        firebaseReady = false;
+        updateSyncBadge('local');
+      }
+    }
+
+    function updateSyncBadge(status) {
+      const badge = document.getElementById('live-sync-badge');
+      const dot = document.getElementById('live-sync-dot');
+      const text = document.getElementById('live-sync-text');
+      if (!badge || !dot || !text) return;
+
+      badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border';
+      dot.className = 'w-2 h-2 rounded-full';
+
+      if (status === 'syncing') {
+        badge.classList.add('bg-amber-50', 'text-amber-800', 'border-amber-200');
+        dot.classList.add('bg-amber-500', 'animate-pulse');
+        text.textContent = 'Salvando...';
+      } else if (status === 'online') {
+        badge.classList.add('bg-emerald-50', 'text-emerald-800', 'border-emerald-200');
+        dot.classList.add('bg-emerald-500');
+        text.textContent = 'Nuvem Ao Vivo';
+      } else if (status === 'offline_fallback') {
+        badge.classList.add('bg-orange-50', 'text-orange-800', 'border-orange-200');
+        dot.classList.add('bg-orange-500');
+        text.textContent = 'Backup Local';
+      } else {
+        badge.classList.add('bg-slate-100', 'text-slate-700', 'border-slate-200');
+        dot.classList.add('bg-slate-400');
+        text.textContent = 'Modo Local';
+      }
+    }
+
     const OFFICIAL_LOGO_SVG = `
       <svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg" class="w-full h-full select-none">
         <defs>
@@ -927,16 +1005,128 @@
       return true;
     }
 
-    function loadInitialLocalState() {
-      try {
-        const hash = window.location.hash || '';
-        const params = new URLSearchParams(window.location.search);
-        const encoded = hash.startsWith('#s=') ? hash.slice(3) : params.get('s');
+    // =========================================================================
+    // SINCRONIZAÇÃO COM FIRESTORE + FALLBACK OFFLINE LOCALSTORAGE
+    // =========================================================================
+    function subscribeToFirestoreDoc(docId) {
+      if (!firebaseReady || !db || !docId || docId.startsWith('t_')) return;
 
+      if (typeof unsubscribeSnapshot === 'function') {
+        unsubscribeSnapshot();
+      }
+
+      unsubscribeSnapshot = db
+        .collection(FIRESTORE_COLLECTION)
+        .doc(docId)
+        .onSnapshot(
+          (doc) => {
+            if (!doc.exists) return;
+            const data = doc.data();
+            if (!data) return;
+
+            isApplyingRemoteSnapshot = true;
+            state.tournamentId = doc.id;
+            state.tournamentName = data.tournamentName || state.tournamentName;
+            state.kings = Array.isArray(data.kings) ? data.kings : state.kings;
+            state.queens = Array.isArray(data.queens) ? data.queens : state.queens;
+            state.gamesMode = data.gamesMode || state.gamesMode;
+            state.dates = Array.isArray(data.dates) ? data.dates : state.dates;
+            state.seed = data.seed || state.seed;
+            if (data.customLogo !== undefined) state.customLogo = data.customLogo;
+            if (Array.isArray(data.qualifyingMatches) && data.qualifyingMatches.length > 0) {
+              state.qualifyingMatches = data.qualifyingMatches;
+            }
+            if (data.playoffs) state.playoffs = data.playoffs;
+
+            // Atualiza backup offline local sem disparar nova gravação na nuvem
+            try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+            } catch (e) {}
+
+            updateSyncBadge(doc.metadata && doc.metadata.fromCache ? 'offline_fallback' : 'online');
+            renderAll();
+            isApplyingRemoteSnapshot = false;
+          },
+          () => {
+            updateSyncBadge('offline_fallback');
+          }
+        );
+    }
+
+    async function pushStateToFirestore() {
+      if (!firebaseReady || !db || !state.tournamentId || state.tournamentId.startsWith('t_')) return;
+
+      updateSyncBadge('syncing');
+      try {
+        const payload = {
+          tournamentName: state.tournamentName,
+          kings: state.kings,
+          queens: state.queens,
+          gamesMode: state.gamesMode,
+          dates: state.dates,
+          seed: state.seed,
+          customLogo: state.customLogo || null,
+          qualifyingMatches: state.qualifyingMatches,
+          playoffs: state.playoffs,
+          updatedAt: Date.now()
+        };
+
+        await db.collection(FIRESTORE_COLLECTION).doc(state.tournamentId).set(payload, { merge: true });
+        updateSyncBadge('online');
+      } catch (e) {
+        updateSyncBadge('offline_fallback');
+      }
+    }
+
+    function scheduleCloudSync() {
+      if (!firebaseReady || !state.tournamentId || state.tournamentId.startsWith('t_')) return;
+      clearTimeout(cloudSaveTimeout);
+      cloudSaveTimeout = setTimeout(() => {
+        pushStateToFirestore();
+      }, 350);
+    }
+
+    async function loadInitialState() {
+      initFirebase();
+
+      const hash = window.location.hash || '';
+      const params = new URLSearchParams(window.location.search);
+      const cloudId = params.get('t') || (hash.startsWith('#t=') ? hash.slice(3) : null);
+      const encoded = hash.startsWith('#s=') ? hash.slice(3) : params.get('s');
+
+      // 1. Prioridade: Link curto com ID do Firestore (?t=ID ou #t=ID)
+      if (cloudId && firebaseReady && db) {
+        try {
+          const doc = await db.collection(FIRESTORE_COLLECTION).doc(cloudId).get();
+          if (doc.exists) {
+            const data = doc.data();
+            state = Object.assign(JSON.parse(JSON.stringify(DEFAULT_STATE)), data);
+            state.tournamentId = doc.id;
+            if (!Array.isArray(state.qualifyingMatches) || state.qualifyingMatches.length === 0) {
+              generateAllValidMatches(false);
+            }
+            try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+            } catch (e) {}
+            subscribeToFirestoreDoc(doc.id);
+            renderAll();
+            return;
+          }
+        } catch (e) {
+          updateSyncBadge('offline_fallback');
+        }
+      }
+
+      // 2. Fallback: Link legado compactado em Base64 (#s=...)
+      try {
         if (encoded && decodeStateFromBase64(encoded)) {
+          renderAll();
           return;
         }
+      } catch (e) {}
 
+      // 3. Fallback Offline: Estado salvo no localStorage
+      try {
         const savedRaw = localStorage.getItem(STORAGE_KEY);
         if (savedRaw) {
           const parsed = JSON.parse(savedRaw);
@@ -945,21 +1135,29 @@
             if (!Array.isArray(state.qualifyingMatches) || state.qualifyingMatches.length === 0) {
               generateAllValidMatches(false);
             }
+            if (state.tournamentId && !state.tournamentId.startsWith('t_') && firebaseReady) {
+              subscribeToFirestoreDoc(state.tournamentId);
+            }
+            renderAll();
             return;
           }
         }
       } catch (e) {}
+
       generateAllValidMatches(false);
+      renderAll();
     }
 
     function saveLocalAndUrl() {
+      // Sempre grava primeiro no localStorage (garantia offline imediata)
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       } catch (e) {}
-      // Se o torneio ativo já está vinculado a um campeonato salvo, atualiza-o automaticamente
+
+      // Atualiza lista local de campeonatos salvos
       if (state.tournamentId) {
         try {
-          const list = getSavedTournamentsList();
+          const list = getLocalSavedTournamentsList();
           const idx = list.findIndex((item) => item.id === state.tournamentId);
           if (idx !== -1) {
             list[idx] = {
@@ -972,10 +1170,24 @@
           }
         } catch (e) {}
       }
+
+      // Atualiza URL (limpa com ?t=ID se estiver na nuvem, ou #s=Base64 se for local)
       try {
-        const encoded = encodeStateToBase64(state);
-        window.history.replaceState(null, '', '#s=' + encoded);
+        if (state.tournamentId && !state.tournamentId.startsWith('t_')) {
+          const url = new URL(window.location.href);
+          url.searchParams.set('t', state.tournamentId);
+          url.hash = '';
+          window.history.replaceState(null, '', url.toString());
+        } else {
+          const encoded = encodeStateToBase64(state);
+          window.history.replaceState(null, '', '#s=' + encoded);
+        }
       } catch (e) {}
+
+      // Sincroniza com Firebase Firestore em segundo plano
+      if (!isApplyingRemoteSnapshot) {
+        scheduleCloudSync();
+      }
     }
 
     function saveAndRender() {
@@ -984,9 +1196,9 @@
     }
 
     // =========================================================================
-    // GERENCIAMENTO DE MÚLTIPLOS CAMPEONATOS (SALVAR, CARREGAR, DELETAR)
+    // GERENCIAMENTO DE MÚLTIPLOS CAMPEONATOS (FIRESTORE + BACKUP LOCAL)
     // =========================================================================
-    function getSavedTournamentsList() {
+    function getLocalSavedTournamentsList() {
       try {
         const raw = localStorage.getItem(SAVED_TOURNAMENTS_KEY);
         const parsed = raw ? JSON.parse(raw) : [];
@@ -996,11 +1208,49 @@
       }
     }
 
-    function setSavedTournamentsList(list) {
+    function setLocalSavedTournamentsList(list) {
       try {
         localStorage.setItem(SAVED_TOURNAMENTS_KEY, JSON.stringify(list));
+      } catch (e) {}
+    }
+
+    async function fetchAllTournaments() {
+      const localList = getLocalSavedTournamentsList();
+
+      if (!firebaseReady || !db) {
+        return localList;
+      }
+
+      try {
+        const snap = await db
+          .collection(FIRESTORE_COLLECTION)
+          .orderBy('updatedAt', 'desc')
+          .limit(30)
+          .get();
+
+        const cloudList = [];
+        snap.forEach((doc) => {
+          const d = doc.data();
+          cloudList.push({
+            id: doc.id,
+            name: d.tournamentName || 'Torneio JCC',
+            updatedAt: d.updatedAt || Date.now(),
+            source: 'cloud',
+            data: Object.assign(JSON.parse(JSON.stringify(DEFAULT_STATE)), d, { tournamentId: doc.id })
+          });
+        });
+
+        // Mescla torneios que só existam localmente (criados offline)
+        const cloudIds = new Set(cloudList.map((c) => c.id));
+        const localOnly = localList
+          .filter((l) => !cloudIds.has(l.id))
+          .map((l) => ({ ...l, source: 'local' }));
+
+        const merged = [...cloudList, ...localOnly];
+        setLocalSavedTournamentsList(merged);
+        return merged;
       } catch (e) {
-        showToast('Erro ao gravar no armazenamento do navegador.', 'rose');
+        return localList.map((l) => ({ ...l, source: 'local' }));
       }
     }
 
@@ -1021,33 +1271,71 @@
       modal.classList.remove('flex');
     }
 
-    function saveCurrentTournament(asNew) {
+    async function saveCurrentTournament(asNew) {
       const input = document.getElementById('input-tournament-name');
       const typedName = (input && input.value.trim()) || `Torneio ${state.dates.join('/')}`;
-      const list = getSavedTournamentsList();
+      state.tournamentName = typedName;
 
+      const payload = {
+        tournamentName: typedName,
+        kings: state.kings,
+        queens: state.queens,
+        gamesMode: state.gamesMode,
+        dates: state.dates,
+        seed: state.seed,
+        customLogo: state.customLogo || null,
+        qualifyingMatches: state.qualifyingMatches,
+        playoffs: state.playoffs,
+        updatedAt: Date.now()
+      };
+
+      // Tenta salvar diretamente no Firestore
+      if (firebaseReady && db) {
+        updateSyncBadge('syncing');
+        try {
+          if (!asNew && state.tournamentId && !state.tournamentId.startsWith('t_')) {
+            await db.collection(FIRESTORE_COLLECTION).doc(state.tournamentId).set(payload, { merge: true });
+            updateSyncBadge('online');
+            saveAndRender();
+            await renderSavedTournamentsList();
+            showToast(`"${typedName}" atualizado na nuvem!`, 'emerald');
+            return;
+          } else {
+            const docRef = await db.collection(FIRESTORE_COLLECTION).add(payload);
+            state.tournamentId = docRef.id;
+            subscribeToFirestoreDoc(docRef.id);
+            updateSyncBadge('online');
+            saveAndRender();
+            await renderSavedTournamentsList();
+            showToast(`"${typedName}" salvo na nuvem!`, 'emerald');
+            return;
+          }
+        } catch (e) {
+          updateSyncBadge('offline_fallback');
+        }
+      }
+
+      // Fallback local caso esteja sem internet ou Firebase não configurado
+      const list = getLocalSavedTournamentsList();
       if (!asNew && state.tournamentId) {
         const existingIdx = list.findIndex((item) => item.id === state.tournamentId);
         if (existingIdx !== -1) {
-          state.tournamentName = typedName;
           list[existingIdx] = {
             id: state.tournamentId,
             name: typedName,
             updatedAt: Date.now(),
             data: JSON.parse(JSON.stringify(state))
           };
-          setSavedTournamentsList(list);
+          setLocalSavedTournamentsList(list);
           saveAndRender();
           renderSavedTournamentsList();
-          showToast(`"${typedName}" atualizado!`, 'emerald');
+          showToast(`"${typedName}" atualizado localmente!`, 'emerald');
           return;
         }
       }
 
       const newId = 't_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
       state.tournamentId = newId;
-      state.tournamentName = typedName;
-
       list.unshift({
         id: newId,
         name: typedName,
@@ -1055,49 +1343,77 @@
         data: JSON.parse(JSON.stringify(state))
       });
 
-      setSavedTournamentsList(list);
+      setLocalSavedTournamentsList(list);
       saveAndRender();
       renderSavedTournamentsList();
-      showToast(`Campeonato "${typedName}" salvo!`, 'emerald');
+      showToast(`"${typedName}" salvo no backup local!`, 'emerald');
     }
 
-    function loadSavedTournament(id) {
-      const list = getSavedTournamentsList();
-      const found = list.find((item) => item.id === id);
-      if (!found || !found.data) {
+    async function loadSavedTournament(id) {
+      let foundData = null;
+      let foundName = '';
+
+      if (firebaseReady && db && !id.startsWith('t_')) {
+        try {
+          const doc = await db.collection(FIRESTORE_COLLECTION).doc(id).get();
+          if (doc.exists) {
+            foundData = doc.data();
+            foundName = foundData.tournamentName || 'Torneio JCC';
+          }
+        } catch (e) {}
+      }
+
+      if (!foundData) {
+        const list = getLocalSavedTournamentsList();
+        const found = list.find((item) => item.id === id);
+        if (found && found.data) {
+          foundData = found.data;
+          foundName = found.name;
+        }
+      }
+
+      if (!foundData) {
         showToast('Campeonato não encontrado.', 'rose');
         return;
       }
 
-      state = Object.assign(JSON.parse(JSON.stringify(DEFAULT_STATE)), JSON.parse(JSON.stringify(found.data)));
-      state.tournamentId = found.id;
-      state.tournamentName = found.name;
+      state = Object.assign(JSON.parse(JSON.stringify(DEFAULT_STATE)), JSON.parse(JSON.stringify(foundData)));
+      state.tournamentId = id;
+      state.tournamentName = foundName;
 
       if (!Array.isArray(state.qualifyingMatches) || state.qualifyingMatches.length === 0) {
         generateAllValidMatches(false);
       }
 
+      if (firebaseReady && !id.startsWith('t_')) {
+        subscribeToFirestoreDoc(id);
+      }
+
       saveAndRender();
       closeTournamentsModal();
-      showToast(`"${found.name}" carregado para edição!`, 'emerald');
+      showToast(`"${foundName}" carregado!`, 'emerald');
     }
 
-    function confirmDeleteSavedTournament(id) {
-      const list = getSavedTournamentsList();
-      const found = list.find((item) => item.id === id);
-      if (!found) return;
-
+    function confirmDeleteSavedTournament(id, name) {
       openConfirmModal(
         'Excluir Campeonato',
-        `Tem certeza que deseja excluir permanentemente "${found.name}"?`,
-        () => {
-          const updated = getSavedTournamentsList().filter((item) => item.id !== id);
-          setSavedTournamentsList(updated);
+        `Tem certeza que deseja excluir permanentemente "${name}"?`,
+        async () => {
+          if (firebaseReady && db && !id.startsWith('t_')) {
+            try {
+              await db.collection(FIRESTORE_COLLECTION).doc(id).delete();
+            } catch (e) {}
+          }
+
+          const updated = getLocalSavedTournamentsList().filter((item) => item.id !== id);
+          setLocalSavedTournamentsList(updated);
+
           if (state.tournamentId === id) {
+            if (typeof unsubscribeSnapshot === 'function') unsubscribeSnapshot();
             state.tournamentId = null;
             saveAndRender();
           }
-          renderSavedTournamentsList();
+          await renderSavedTournamentsList();
           showToast('Campeonato excluído.', 'slate');
         }
       );
@@ -1108,6 +1424,8 @@
         'Novo Campeonato do Zero',
         'Deseja iniciar um novo torneio limpo? Salve o atual antes se quiser guardar os placares.',
         () => {
+          if (typeof unsubscribeSnapshot === 'function') unsubscribeSnapshot();
+
           const keptKings = [...state.kings];
           const keptQueens = [...state.queens];
           const keptLogo = state.customLogo;
@@ -1128,11 +1446,18 @@
       );
     }
 
-    function renderSavedTournamentsList() {
+    async function renderSavedTournamentsList() {
       const container = document.getElementById('saved-tournaments-list');
       if (!container) return;
 
-      const list = getSavedTournamentsList();
+      container.innerHTML = `
+        <div class="text-center py-6 px-4 text-xs font-bold text-slate-400">
+          Carregando campeonatos...
+        </div>
+      `;
+
+      const list = await fetchAllTournaments();
+
       if (list.length === 0) {
         container.innerHTML = `
           <div class="text-center py-6 px-4 rounded-2xl bg-slate-50 border border-dashed border-slate-200">
@@ -1159,11 +1484,16 @@
                 minute: '2-digit'
               })
             : '';
+          const cloudTag =
+            item.source === 'cloud' || !String(item.id).startsWith('t_')
+              ? '<span class="text-[10px]" title="Salvo na nuvem">☁️</span>'
+              : '<span class="text-[10px]" title="Salvo apenas localmente">📱</span>';
 
           return `
             <div class="p-3 rounded-2xl border ${isCurrent ? 'bg-amber-50/70 border-amber-300' : 'bg-white border-slate-200'} flex items-center justify-between gap-2">
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-1.5">
+                  ${cloudTag}
                   <span class="text-xs font-black text-slate-900 truncate">${escapeHtml(item.name)}</span>
                   ${
                     isCurrent
@@ -1178,14 +1508,14 @@
               <div class="flex items-center gap-1.5 shrink-0">
                 <button
                   type="button"
-                  onclick="loadSavedTournament('${item.id}')"
+                  onclick="loadSavedTournament('${escapeHtml(item.id)}')"
                   class="px-2.5 py-1.5 rounded-xl ${isCurrent ? 'bg-amber-500 text-slate-950' : 'bg-slate-900 text-white'} text-[11px] font-extrabold active:scale-95 transition"
                 >
                   ${isCurrent ? 'Aberto' : 'Abrir'}
                 </button>
                 <button
                   type="button"
-                  onclick="confirmDeleteSavedTournament('${item.id}')"
+                  onclick="confirmDeleteSavedTournament('${escapeHtml(item.id)}', '${escapeHtml(item.name)}')"
                   title="Excluir campeonato"
                   class="w-8 h-8 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-xs font-extrabold flex items-center justify-center active:scale-95 transition"
                 >
@@ -1805,7 +2135,7 @@
             <ol class="list-decimal list-inside space-y-1 font-semibold text-amber-900">
               <li>Toque em <strong>⬇️ Baixar</strong> no topo da tela para salvar o <code class="bg-amber-100 px-1.5 py-0.5 rounded font-bold">index.html</code>.</li>
               <li>Envie o arquivo gratuitamente no <strong>GitHub Pages</strong> ou <strong>Netlify Drop</strong>.</li>
-              <li>Abra o link gerado e toque em <strong>Link</strong> para compartilhar os placares com a turma!</li>
+              <li>Abra o link gerado e toque em <strong>Link</strong> para compartilhar os placares ao vivo com a turma!</li>
             </ol>
           </div>
           <div class="grid grid-cols-2 gap-2">
@@ -1828,15 +2158,29 @@
         return;
       }
 
+      // Se o torneio ainda não foi salvo na nuvem e o Firebase está ativo, salva automaticamente para gerar link curto
+      if (firebaseReady && (!state.tournamentId || state.tournamentId.startsWith('t_'))) {
+        await saveCurrentTournament(false);
+      }
+
       const baseUrl = window.location.origin + window.location.pathname;
-      const fullShareUrl = `${baseUrl}#s=${encodeStateToBase64(state)}`;
+      const isCloudSynced = firebaseReady && state.tournamentId && !state.tournamentId.startsWith('t_');
+      const fullShareUrl = isCloudSynced
+        ? `${baseUrl}?t=${encodeURIComponent(state.tournamentId)}`
+        : `${baseUrl}#s=${encodeStateToBase64(state)}`;
+
       publicShareUrl = fullShareUrl;
 
-      titleEl.textContent = 'Link Público com Resultados';
-      subtitleEl.textContent = 'Envie no WhatsApp para acompanhar jogos e ranking';
+      titleEl.textContent = isCloudSynced ? 'Link Ao Vivo (Nuvem)' : 'Link Público com Resultados';
+      subtitleEl.textContent = isCloudSynced
+        ? 'Placares atualizam automaticamente no celular da galera'
+        : 'Envie no WhatsApp para acompanhar jogos e ranking';
+
       bodyEl.innerHTML = `
         <div class="space-y-1.5">
-          <span id="shortener-status" class="block text-[11px] font-bold text-purple-700">⏳ Gerando link curto...</span>
+          <span id="shortener-status" class="block text-[11px] font-bold text-purple-700">
+            ${isCloudSynced ? '☁️ Link sincronizado com Firebase!' : '⏳ Gerando link curto...'}
+          </span>
           <input
             type="text"
             id="public-share-input"
@@ -1866,24 +2210,26 @@
 
       copyTextToClipboard(fullShareUrl);
 
-      try {
-        const res = await fetch(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(fullShareUrl)}`);
-        if (res.ok) {
-          const shortUrl = (await res.text()).trim();
-          if (shortUrl.startsWith('http')) {
-            publicShareUrl = shortUrl;
-            const inp = document.getElementById('public-share-input');
-            const st = document.getElementById('shortener-status');
-            if (inp) inp.value = shortUrl;
-            if (st) st.textContent = '✓ Link curto copiado com sucesso!';
-            copyTextToClipboard(shortUrl);
-            return;
+      if (!isCloudSynced) {
+        try {
+          const res = await fetch(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(fullShareUrl)}`);
+          if (res.ok) {
+            const shortUrl = (await res.text()).trim();
+            if (shortUrl.startsWith('http')) {
+              publicShareUrl = shortUrl;
+              const inp = document.getElementById('public-share-input');
+              const st = document.getElementById('shortener-status');
+              if (inp) inp.value = shortUrl;
+              if (st) st.textContent = '✓ Link curto copiado com sucesso!';
+              copyTextToClipboard(shortUrl);
+              return;
+            }
           }
-        }
-      } catch (e) {}
+        } catch (e) {}
 
-      const st = document.getElementById('shortener-status');
-      if (st) st.textContent = '✓ Link copiado com sucesso!';
+        const st = document.getElementById('shortener-status');
+        if (st) st.textContent = '✓ Link copiado com sucesso!';
+      }
     }
 
     function closeShareModal() {
@@ -1902,7 +2248,7 @@
     function sendPublicUrlWhatsApp() {
       const inp = document.getElementById('public-share-input');
       const val = (inp && inp.value) || publicShareUrl;
-      const msg = `🎾 *Rei & Rainha da Praia • Família Sempre Sobra JCC*\n🏆 ${state.tournamentName || 'Torneio JCC'}\n📅 Dias: ${state.dates.join(', ')}\n\n📲 Acompanhe os jogos e a classificação:\n${val}`;
+      const msg = `🎾 *Rei & Rainha da Praia • Família Sempre Sobra JCC*\n🏆 ${state.tournamentName || 'Torneio JCC'}\n📅 Dias: ${state.dates.join(', ')}\n\n📲 Acompanhe os jogos e a classificação ao vivo:\n${val}`;
       window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank', 'noopener,noreferrer');
     }
 
@@ -1992,8 +2338,7 @@
       closeConfirmModal();
     });
 
-    loadInitialLocalState();
-    renderAll();
+    loadInitialState();
   </script>
 </body>
 </html>
